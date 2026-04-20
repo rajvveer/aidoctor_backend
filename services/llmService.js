@@ -50,9 +50,47 @@ class LLMService {
     const params = { model, messages, temperature, max_tokens: maxTokens };
     if (jsonMode) params.response_format = { type: 'json_object' };
 
-    // Prevent Groq from hanging indefinitely on rate limits or API outages
-    const completion = await this.groq.chat.completions.create(params, { timeout: 10000 });
-    return completion.choices[0]?.message?.content || '';
+    try {
+      // Prevent Groq from hanging indefinitely on rate limits or API outages
+      const completion = await this.groq.chat.completions.create(params, { timeout: 10000 });
+      return completion.choices[0]?.message?.content || '';
+    } catch (error) {
+      // Some responses fail Groq's strict JSON validator even with json_object mode.
+      // Retry once without strict response_format and salvage JSON from the output.
+      if (jsonMode && this._isJsonValidationError(error)) {
+        const retryMessages = [];
+        if (systemPrompt) retryMessages.push({ role: 'system', content: systemPrompt });
+        retryMessages.push({
+          role: 'system',
+          content: 'Return ONLY one valid JSON object. No markdown, no prose, no code fences, no trailing text.'
+        });
+        retryMessages.push({ role: 'user', content: prompt });
+
+        const retryCompletion = await this.groq.chat.completions.create({
+          model,
+          messages: retryMessages,
+          temperature: 0,
+          max_tokens: maxTokens
+        }, { timeout: 10000 });
+
+        const retryContent = retryCompletion.choices[0]?.message?.content || '';
+        return this._extractJsonObject(retryContent);
+      }
+      throw error;
+    }
+  }
+
+  _isJsonValidationError(error) {
+    const msg = (error && (error.message || String(error))) || '';
+    return msg.includes('json_validate_failed') || msg.includes('Failed to validate JSON');
+  }
+
+  _extractJsonObject(text) {
+    if (!text || typeof text !== 'string') return '{}';
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) return '{}';
+    return text.slice(start, end + 1);
   }
 
   /**
