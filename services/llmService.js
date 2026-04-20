@@ -648,23 +648,16 @@ Return ONLY valid JSON matching this schema:
   ]
 }`; // keep prompt formatting
 
-    // Add instruction to avoid markdown blocks
-    const finalPrompt = prompt + '\nIMPORTANT: Output ONLY raw JSON. Do not wrap in markdown (```json).';
-
     try {
       const response = await this.groq.chat.completions.create({
-        messages: [{ role: 'user', content: finalPrompt }],
-        model: MODELS.REASONING,
+        messages: [{ role: 'user', content: prompt }],
+        model: MODELS.QUERY_EXPANSION,
         temperature: 0,
-        max_tokens: 1024
+        max_tokens: 500,
+        response_format: { type: "json_object" }
       });
       
-      let rawContent = response.choices[0]?.message?.content || '{"coordinates":[]}';
-      
-      // Strip Qwen <think> blocks and potential markdown bloat
-      rawContent = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '');
-      rawContent = rawContent.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
-
+      const rawContent = response.choices[0]?.message?.content || '{"coordinates":[]}';
       const parsed = JSON.parse(rawContent);
       const newCoords = parsed.coordinates || [];
 
