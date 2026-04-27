@@ -609,14 +609,15 @@ exports.handleFileUpload = async (req, res) => {
 
     // ── Step 3: RAG Pipeline — retrieve relevant research ────────────
     // Build a research query from document analysis + user query
+    // Priority: userQuery > primaryCondition > suggested topics > abnormal values > doc type
+    const primaryCondition = analysis.primaryCondition || '';
     const ragTopics = (analysis.suggestedResearchTopics || []).slice(0, 2);
-    const docType = analysis.documentType || '';
-    // Derive a concise disease/condition from: user query, abnormal values, or doc type
     const abnormalHints = (analysis.abnormalValues || []).slice(0, 2).join(', ');
     const ragQuery = userQuery
+      || primaryCondition
       || ragTopics[0]
       || abnormalHints
-      || docType
+      || analysis.documentType
       || file.originalname;
 
     let ragPublications = [];
@@ -754,12 +755,12 @@ exports.matchTrial = async (req, res) => {
   try {
     let context = {};
     if (conversationId) {
-      const conv = await Conversation.findOne({ id: conversationId });
+      const conv = await Conversation.findOne({ conversationId: conversationId });
       if (conv) {
         context = {
-          disease: conv.structuredData?.disease || '',
+          disease: conv.userProfile?.diseaseOfInterest || conv.metadata?.lastDisease || '',
           context: conv.messages.map(m => m.content).join(' '),
-          structuredData: conv.structuredData
+          structuredData: conv.userProfile
         };
       }
     }
@@ -894,7 +895,7 @@ exports.exportPDF = async (req, res) => {
             doc.moveDown(0.3);
             msg.response.publications.slice(0, 5).forEach((pub, i) => {
               doc.fillColor('#3B82F6').fontSize(10).font('Helvetica-Bold').text(`${i + 1}. ${pub.title || 'Untitled Publication'}`);
-              doc.fillColor('#94A3B8').fontSize(9).font('Helvetica').text(`Year: ${pub.year || 'N/A'} | Citations: ${pub.citationCount || '0'} | Relevance: ${(pub.relevanceScore * 100).toFixed(0)}%`);
+              doc.fillColor('#94A3B8').fontSize(9).font('Helvetica').text(`Year: ${pub.year || 'N/A'} | Citations: ${pub.citationCount || '0'} | Relevance: ${((pub.relevanceScore || 0) * 100).toFixed(0)}%`);
               if (pub.url) {
                 doc.fillColor('#60A5FA').fontSize(9).text(pub.url, { link: pub.url, underline: true });
               }

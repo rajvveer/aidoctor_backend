@@ -516,16 +516,21 @@ Respond as Dr. Curalink in 80 words or less. Be brief, warm, and direct.`;
    * Returns structured analysis with key findings, abnormal values, etc.
    */
   async analyzeMedicalDocument(extractedText, userQuery = '') {
-    const systemPrompt = `You are Curalink, an advanced AI Medical Document Analyzer. A user has uploaded a medical document (lab report, prescription, discharge summary, radiology report, etc.) and you need to provide a thorough, structured analysis.
+    const systemPrompt = `You are Curalink, an advanced AI Medical Document Analyzer. A user has uploaded a medical document and you need to provide a thorough, structured analysis.
+
+The document could be ANY type: lab report, prescription, discharge summary, radiology report, research brief, clinical trial summary, pathology report, doctor's note, insurance document, etc.
 
 CRITICAL RULES:
-1. ONLY analyze what is actually present in the document text — never hallucinate values
-2. Identify the document type accurately
-3. Highlight ANY abnormal or critical values with clear explanations
-4. Use simple language that patients can understand
-5. Always include a disclaimer to consult healthcare providers
-6. If the document is unclear or partial, acknowledge limitations
-7. Respond in valid JSON format ONLY`;
+1. ONLY analyze what is actually present in the document text — never hallucinate values or facts
+2. Identify the document type accurately and adapt your analysis style accordingly
+3. For LAB REPORTS: extract actual numeric values, reference ranges, and flag abnormalities
+4. For RESEARCH/CLINICAL documents: extract key medical insights, conditions studied, treatment approaches, and notable statistical findings
+5. For PRESCRIPTIONS: list medications, dosages, frequencies, and any noted interactions
+6. For RADIOLOGY/IMAGING: summarize findings, measurements, and clinical impressions
+7. Use simple language that patients can understand
+8. Always include a disclaimer to consult healthcare providers
+9. If the document is unclear or partial, acknowledge limitations
+10. Respond in valid JSON format ONLY`;
 
     const prompt = `EXTRACTED DOCUMENT TEXT:
 ---
@@ -536,22 +541,29 @@ ${userQuery ? `USER'S SPECIFIC QUESTION: "${userQuery}"` : 'No specific question
 
 Analyze this medical document and respond ONLY in this exact JSON format:
 {
-  "documentType": "Type of document (e.g., Complete Blood Count Report, Prescription, Discharge Summary, MRI Report, etc.)",
-  "summary": "2-3 sentence plain-language summary of what this document shows",
+  "documentType": "Precise document type (e.g., Complete Blood Count Report, Research Dossier, Prescription, Discharge Summary, MRI Report, Clinical Trial Summary, etc.)",
+  "primaryCondition": "The PRIMARY medical condition, disease, or health topic this document is about (e.g., 'heart disease', 'type 2 diabetes', 'lung cancer', 'hypertension'). This MUST be a concise medical term, not a sentence. If multiple conditions, pick the most prominent one.",
+  "summary": "3-4 sentence plain-language summary covering: what this document is, the key takeaways, and what it means for the patient. Be specific — mention actual conditions, values, or findings from the document.",
   "keyFindings": [
     {
-      "parameter": "Test/Parameter name",
-      "value": "The value found",
-      "referenceRange": "Normal range if available",
-      "status": "normal | elevated | low | critical",
-      "explanation": "What this means in simple terms"
+      "parameter": "Test name, finding title, or key insight",
+      "value": "Actual value, result, or key detail from the document",
+      "referenceRange": "Normal range if available, or 'N/A'",
+      "status": "normal | elevated | low | critical | notable",
+      "explanation": "What this means in simple, actionable terms for the patient"
     }
   ],
-  "abnormalValues": ["List of any concerning or out-of-range findings with brief explanation"],
+  "abnormalValues": ["List of concerning or out-of-range findings, each with a brief explanation of clinical significance"],
   "medications": ["List of any medications mentioned with dosages if available"],
-  "recommendations": "Brief personalized recommendation based on the findings. End with a medical disclaimer.",
-  "suggestedResearchTopics": ["2-3 medical topics the user might want to research based on this document"]
-}`;
+  "recommendations": "Specific, actionable recommendations based on the document findings. Reference specific findings. End with a 1-sentence medical disclaimer.",
+  "suggestedResearchTopics": ["3 specific medical research topics the user might want to explore, based on the actual conditions/findings in this document. Be specific (e.g., 'latest treatments for atrial fibrillation' not 'heart disease research')"]
+}
+
+IMPORTANT:
+- For "keyFindings": adapt to the document type. Lab reports should have numeric values and ranges. Research documents should have key medical insights with specific data points. Prescriptions should list each medication as a finding.
+- The "primaryCondition" must be a short medical term (1-4 words max), not a description.
+- Make "summary" genuinely informative — avoid generic statements like "this document shows research". Instead say what specific conditions/findings it covers.
+- Make "recommendations" specific to the findings, not generic advice.`;
 
     try {
       const result = await this.generate(prompt, {
@@ -567,6 +579,7 @@ Analyze this medical document and respond ONLY in this exact JSON format:
       console.error('Medical document analysis failed:', e.message);
       return {
         documentType: 'Medical Document',
+        primaryCondition: '',
         summary: `Analysis of uploaded document (${extractedText.length} characters extracted). The AI was unable to produce a structured analysis. Please review the extracted text below.`,
         keyFindings: [],
         abnormalValues: [],

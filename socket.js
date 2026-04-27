@@ -182,7 +182,7 @@ Respond ONLY in valid JSON:
           // New topic or no cache — fresh research
           if (cachedResearch) console.log(`🔄 New research topic detected — clearing cache`);
           socket.emit('voice:thinking', { step: 'expanding', message: 'Analyzing your question...' });
-          const expansion = await queryExpander.expand(transcription, '');
+          const expansion = await queryExpander.expand(transcription, {});
           console.log(`🧠 Disease: ${expansion.disease} | Queries: ${expansion.expandedQueries.join(', ')}`);
 
           socket.emit('voice:thinking', { step: 'retrieving', message: 'Searching medical databases...' });
@@ -194,7 +194,7 @@ Respond ONLY in valid JSON:
             ]);
           } catch (retErr) {
             console.warn('⚠️ Retrieval failed/timeout:', retErr.message);
-            retrieval = { publications: [], clinicalTrials: [], metadata: { totalResults: 0, pubmedCount: 0, openAlexCount: 0, clinicalTrialsCount: 0 } };
+            retrieval = { publications: [], clinicalTrials: [], metadata: { totalResults: 0, totalBeforeDedup: 0, totalAfterDedup: 0, pubmedCount: 0, openAlexCount: 0, clinicalTrialsCount: 0, sources: { openAlex: 'timeout', pubmed: 'timeout', clinicalTrials: 'timeout' } }, timeMs: 0 };
           }
 
           socket.emit('voice:thinking', {
