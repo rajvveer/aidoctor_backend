@@ -721,11 +721,11 @@ exports.handleFileUpload = async (req, res) => {
         response: {
           ...analysis,
           fileInfo: processed.fileInfo,
+          isFileAnalysis: true,
           publications: ragPublications,
           clinicalTrials: ragTrials,
           researchers: ragResearchers,
         },
-        isFileAnalysis: true,
         timestamp: new Date()
       }
     );
