@@ -98,10 +98,11 @@ async function loadOrCreateConversation(conversationId, userInput, user) {
 }
 
 function getContext(conversation) {
+  const profile = conversation.userProfile || {};
   return {
-    lastDisease: conversation.metadata?.lastDisease || '',
+    lastDisease: conversation.metadata?.lastDisease || profile.diseaseOfInterest || '',
     lastIntent: conversation.metadata?.lastIntent || '',
-    lastLocation: conversation.metadata?.lastLocation || ''
+    lastLocation: conversation.metadata?.lastLocation || profile.location || ''
   };
 }
 
@@ -596,25 +597,108 @@ exports.handleFileUpload = async (req, res) => {
 
     console.log(`✅ Extracted ${processed.extractedText.length} chars (${processed.type})`);
 
-    // Step 2: AI Analysis
+    // Step 2: AI Analysis of the document itself
     console.log('🤖 Step 2: AI analyzing document...');
     const analysis = await llmService.analyzeMedicalDocument(
       processed.extractedText,
       userQuery || ''
     );
 
-    const totalTimeMs = Date.now() - totalStart;
-    console.log(`✅ File analysis complete in ${totalTimeMs}ms`);
+    const analysisTimeMs = Date.now() - totalStart;
+    console.log(`✅ File analysis complete in ${analysisTimeMs}ms`);
 
-    // Build response
+    // ── Step 3: RAG Pipeline — retrieve relevant research ────────────
+    // Build a research query from document analysis + user query
+    const ragTopics = (analysis.suggestedResearchTopics || []).slice(0, 2);
+    const docType = analysis.documentType || '';
+    // Derive a concise disease/condition from: user query, abnormal values, or doc type
+    const abnormalHints = (analysis.abnormalValues || []).slice(0, 2).join(', ');
+    const ragQuery = userQuery
+      || ragTopics[0]
+      || abnormalHints
+      || docType
+      || file.originalname;
+
+    let ragPublications = [];
+    let ragTrials = [];
+    let ragResearchers = [];
+    let ragMetrics = {};
+
+    if (ragQuery && ragQuery.length > 3) {
+      try {
+        console.log(`\n🔬 Step 3: RAG Pipeline for document — query: "${ragQuery}"`);
+        const context = getContext(conversation);
+
+        // 3a. Query Expansion
+        console.log('🧠 Step 3a: Query Expansion...');
+        const expansion = await queryExpander.expand(ragQuery, context);
+        console.log(`   Disease: ${expansion.disease} | Queries: ${expansion.expandedQueries.join(', ')}`);
+
+        // 3b. Parallel Retrieval
+        console.log('🔍 Step 3b: Retrieving from all sources...');
+        const retrieval = await retrievalManager.retrieve(expansion);
+
+        // 3c. Ranking
+        console.log('📊 Step 3c: Ranking...');
+        let ranked = rankingPipeline.rank(retrieval.publications, retrieval.clinicalTrials, expansion);
+
+        // Fallback for sparse results
+        if (ranked.publications.length < 4 && expansion.disease) {
+          console.log('⚠️ <4 publications, running fallback...');
+          const fallbackExpansion = { ...expansion, intent: '', expandedQueries: [expansion.disease] };
+          const fallbackRetrieval = await retrievalManager.retrieve(fallbackExpansion);
+          const fallbackRanked = rankingPipeline.rank(fallbackRetrieval.publications, [], fallbackExpansion);
+          const existingIds = new Set(ranked.publications.map(p => p.id));
+          const addedPubs = fallbackRanked.publications.filter(p => !existingIds.has(p.id));
+          ranked.publications = [...ranked.publications, ...addedPubs].slice(0, 8);
+        }
+
+        if (ranked.clinicalTrials.length === 0 && expansion.disease) {
+          console.log('⚠️ 0 trials, running fallback...');
+          const fallbackTrials = await clinicalTrialsService.fetchTrials(expansion.disease, '', expansion.location);
+          const fallbackRanked = rankingPipeline.rank([], fallbackTrials, { ...expansion, intent: '' });
+          ranked.clinicalTrials = fallbackRanked.clinicalTrials;
+        }
+
+        ragPublications = ranked.publications.map(buildPublicationResponse);
+        ragTrials = ranked.clinicalTrials.map(buildTrialResponse);
+        ragResearchers = retrieval.researchers || [];
+
+        ragMetrics = {
+          totalRetrieved: (retrieval.metadata.totalBeforeDedup || 0) + (retrieval.metadata.clinicalTrialsCount || 0) || retrieval.metadata.totalResults || 0,
+          selectedPublications: ranked.rankingMetrics.selectedPublications,
+          selectedTrials: ranked.rankingMetrics.selectedTrials,
+          expandedQueries: expansion.expandedQueries,
+          retrievalTimeMs: retrieval.timeMs,
+          rankingTimeMs: ranked.rankingMetrics.timeMs,
+          sources: retrieval.metadata.sources,
+        };
+
+        console.log(`✅ RAG: ${ragPublications.length} pubs, ${ragTrials.length} trials, ${ragResearchers.length} researchers`);
+      } catch (ragError) {
+        console.error('⚠️ RAG pipeline failed (non-fatal):', ragError.message);
+        // Non-fatal: the document analysis still works, just without RAG enrichment
+      }
+    }
+
+    const totalTimeMs = Date.now() - totalStart;
+
+    // Build response — merge document analysis + RAG results
     const response = {
       conversationId: convId,
       fileInfo: processed.fileInfo,
       fileType: processed.type,
-      analysis,
+      analysis: {
+        ...analysis,
+        // Attach RAG results into analysis so the client can render them
+        publications: ragPublications,
+        clinicalTrials: ragTrials,
+        researchers: ragResearchers,
+      },
       pipelineMetrics: {
         totalTimeMs,
-        fileProcessingMs: totalTimeMs, // simplified
+        fileProcessingMs: analysisTimeMs,
+        ...ragMetrics,
       }
     };
 
@@ -636,6 +720,9 @@ exports.handleFileUpload = async (req, res) => {
         response: {
           ...analysis,
           fileInfo: processed.fileInfo,
+          publications: ragPublications,
+          clinicalTrials: ragTrials,
+          researchers: ragResearchers,
         },
         isFileAnalysis: true,
         timestamp: new Date()
@@ -648,6 +735,7 @@ exports.handleFileUpload = async (req, res) => {
     }
 
     await conversation.save();
+    console.log(`\n✅ File upload + RAG complete in ${totalTimeMs}ms`);
 
     res.json(response);
 
