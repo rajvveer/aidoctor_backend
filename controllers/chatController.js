@@ -624,6 +624,7 @@ exports.handleFileUpload = async (req, res) => {
       userQuery || ''
     );
 
+    let ragMetrics = {};
     // Step 3: RAG Integration
     if (analysis.primaryCondition) {
       console.log(`\n🧠 Step 3: Triggering RAG for extracted condition: ${analysis.primaryCondition}...`);
@@ -648,6 +649,14 @@ exports.handleFileUpload = async (req, res) => {
       analysis.publications = ranked.publications.map(buildPublicationResponse);
       analysis.clinicalTrials = ranked.clinicalTrials.map(buildTrialResponse);
       analysis.researchers = retrieval.researchers || [];
+
+      ragMetrics = {
+        totalRetrieved: (retrieval.metadata.totalBeforeDedup || 0) + (retrieval.metadata.clinicalTrialsCount || 0) || retrieval.metadata.totalResults || 0,
+        totalAfterDedup: (retrieval.metadata.totalAfterDedup || 0) + (retrieval.metadata.clinicalTrialsCount || 0) || retrieval.metadata.totalResults || 0,
+        selectedPublications: ranked.rankingMetrics.selectedPublications || ranked.publications.length,
+        selectedTrials: ranked.rankingMetrics.selectedTrials || ranked.clinicalTrials.length,
+        expandedQueries: expansion.expandedQueries
+      };
     }
 
     const totalTimeMs = Date.now() - totalStart;
@@ -662,6 +671,7 @@ exports.handleFileUpload = async (req, res) => {
       pipelineMetrics: {
         totalTimeMs,
         fileProcessingMs: totalTimeMs, // simplified
+        ...ragMetrics
       }
     };
 
