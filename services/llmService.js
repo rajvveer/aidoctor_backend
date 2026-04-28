@@ -624,11 +624,11 @@ IMPORTANT:
 
     // Only pass relevant fields to avoid sending unnecessary data
     const safeContext = {
-      disease: userContext.disease,
-      context: userContext.context || '',
+      disease: userContext.disease || '',
+      context: (userContext.context || '').substring(0, 1500),
       additionalNotes: userContext.structuredData?.query || '',
       patientName: userContext.structuredData?.patientName || 'Patient',
-      userDirectAnswers: additionalContext // User's direct answers to follow up questions
+      userDirectAnswers: additionalContext || '' // User's direct answers to follow up questions
     };
 
     const prompt = `You are an expert Clinical Trial Coordinator AI.
@@ -654,13 +654,34 @@ Respond ONLY in strictly valid JSON format matching this exact schema:
         messages: [{ role: 'user', content: prompt }],
         model: MODELS.QUERY_EXPANSION,
         temperature: 0.1,
+        max_tokens: 512,
         response_format: { type: 'json_object' }
-      });
+      }, { timeout: 15000 });
 
-      return JSON.parse(response.choices[0]?.message?.content || '{"isEligible": true, "reasoning": "Insufficient context to completely rule out eligibility. Recommend discussing with your provider."}');
+      const rawContent = response.choices[0]?.message?.content || '';
+      
+      let parsed;
+      try {
+        parsed = JSON.parse(rawContent);
+      } catch {
+        // Salvage JSON from potentially malformed output
+        const salvaged = this._extractJsonObject(rawContent);
+        parsed = JSON.parse(salvaged);
+      }
+
+      // Validate and normalize the response shape
+      return {
+        isEligible: typeof parsed.isEligible === 'boolean' ? parsed.isEligible : false,
+        reasoning: parsed.reasoning || 'Analysis complete.',
+        missingQuestions: Array.isArray(parsed.missingQuestions) ? parsed.missingQuestions : []
+      };
     } catch (error) {
       console.error('LLM Eligibility Error:', error.message);
-      return { isEligible: true, reasoning: 'Could not automatically determine eligibility. Please review criteria manually.' };
+      return {
+        isEligible: false,
+        reasoning: 'Could not automatically determine eligibility due to a processing error. Please review the criteria manually or try again.',
+        missingQuestions: []
+      };
     }
   }
 

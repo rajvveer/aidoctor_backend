@@ -755,21 +755,45 @@ exports.matchTrial = async (req, res) => {
   try {
     let context = {};
     if (conversationId) {
-      const conv = await Conversation.findOne({ conversationId: conversationId });
+      // Build query — prefer user-owned conversations for better context
+      const query = { conversationId };
+      if (req.user) query.userId = req.user._id;
+
+      const conv = await Conversation.findOne(query) || await Conversation.findOne({ conversationId });
       if (conv) {
+        // Extract only user messages and structured inputs for clean, focused context
+        // (AI response paragraphs are too noisy and hit token limits)
+        const userMessages = conv.messages
+          .filter(m => m.role === 'user')
+          .map(m => m.content)
+          .join('. ');
+        
+        const structuredContext = conv.messages
+          .filter(m => m.structuredInput && m.structuredInput.disease)
+          .map(m => `Disease: ${m.structuredInput.disease}, Query: ${m.structuredInput.query || ''}, Location: ${m.structuredInput.location || ''}`)
+          .join('. ');
+
         context = {
           disease: conv.userProfile?.diseaseOfInterest || conv.metadata?.lastDisease || '',
-          context: conv.messages.map(m => m.content).join(' '),
+          context: (structuredContext + ' ' + userMessages).substring(0, 2000),
           structuredData: conv.userProfile
         };
       }
     }
 
     const matchData = await llmService.evaluateEligibility(criteria, context, additionalContext);
-    res.json(matchData);
+
+    // Ensure response always has the expected shape
+    const safeResponse = {
+      isEligible: typeof matchData.isEligible === 'boolean' ? matchData.isEligible : false,
+      reasoning: matchData.reasoning || 'Could not determine eligibility. Please review the criteria manually.',
+      missingQuestions: Array.isArray(matchData.missingQuestions) ? matchData.missingQuestions : []
+    };
+
+    res.json(safeResponse);
   } catch (err) {
-    console.error('Trial Match Error:', err);
-    res.status(500).json({ error: 'Failed to match trial.' });
+    console.error('Trial Match Error:', err.message, err.stack);
+    res.status(500).json({ error: 'Failed to match trial. Please try again.' });
   }
 };
 
