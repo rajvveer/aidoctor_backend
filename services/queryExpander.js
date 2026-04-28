@@ -29,47 +29,48 @@ class QueryExpander {
       typeof userInput === 'string' ? userInput : (userInput.query || userInput.disease || '')
     );
 
-    // Detect if this is a follow-up query (user didn't mention a disease but context has one)
-    const isFollowUp = conversationContext.lastDisease &&
-      (!parsed.disease || parsed.disease === parsed.query);
+    // Detect if this is a contextual query (user didn't explicitly name a disease but we have one in context/profile)
+    const fallbackDisease = conversationContext.lastDisease || conversationContext.diseaseOfInterest;
+    const isContextualQuery = fallbackDisease && (!parsed.disease || parsed.disease === parsed.query);
 
     let expansion;
     try {
       expansion = await llmService.expandQuery(merged.query, {
         disease: merged.disease,
-        lastDisease: conversationContext.lastDisease,
+        lastDisease: fallbackDisease,
         lastIntent: conversationContext.lastIntent,
         location: merged.location
       });
 
-      // Strict Context Enforcement: lastDisease takes priority unless the user explicitly names a new disease
-      const contextDisease = conversationContext.lastDisease;
-      if (contextDisease) {
+      // Strict Context Enforcement: profile/last disease takes priority unless user explicitly names a new disease
+      if (fallbackDisease) {
         const lowerQuery = (typeof userInput === 'string' ? userInput : merged.query).toLowerCase();
-        const lowerContextDisease = contextDisease.toLowerCase();
+        const lowerFallbackDisease = fallbackDisease.toLowerCase();
+        let targetDisease = expansion.disease;
 
-        if (expansion.disease && expansion.disease.toLowerCase() !== lowerContextDisease) {
+        if (expansion.disease && expansion.disease.toLowerCase() !== lowerFallbackDisease) {
           const lowerNewDisease = expansion.disease.toLowerCase();
           // If the new disease guessed by LLM is NOT explicitly in the user's text, discard it
           if (!lowerQuery.includes(lowerNewDisease)) {
-            console.log(`[QueryExpander] Preventing LLM hallucination: reverting inferred disease '${expansion.disease}' back to context '${contextDisease}'`);
-            expansion.disease = contextDisease;
+            console.log(`[QueryExpander] Preventing LLM hallucination: reverting inferred disease '${expansion.disease}' back to context '${fallbackDisease}'`);
+            expansion.disease = fallbackDisease;
+            targetDisease = fallbackDisease;
           }
         }
 
         // CRITICAL: Sanitize ALL expanded queries — remove any hallucinated disease terms
-        // and ensure context disease is present in every query
-        if (isFollowUp && expansion.expandedQueries) {
+        // and ensure target disease is present in every query
+        if (isContextualQuery && expansion.expandedQueries) {
           expansion.expandedQueries = this._sanitizeExpandedQueries(
             expansion.expandedQueries,
-            contextDisease,
+            targetDisease,
             lowerQuery
           );
           // Also fix searchTerms
           if (expansion.searchTerms) {
             expansion.searchTerms = this._sanitizeSearchTerms(
               expansion.searchTerms,
-              contextDisease,
+              targetDisease,
               merged.query
             );
           }
@@ -171,12 +172,17 @@ class QueryExpander {
    */
   _mergeWithContext(parsed, context) {
     const result = { ...parsed };
-    // Carry forward disease from previous turn if none detected
-    if ((!result.disease || result.disease === result.query) && context.lastDisease) {
-      result.disease = context.lastDisease;
+    // Carry forward disease from previous turn or user profile if none detected
+    const fallbackDisease = context.lastDisease || context.diseaseOfInterest;
+    if ((!result.disease || result.disease === result.query) && fallbackDisease) {
+      result.disease = fallbackDisease;
     }
-    if (!result.location && context.lastLocation) {
-      result.location = context.lastLocation;
+    const fallbackLocation = context.lastLocation || context.location;
+    if (!result.location && fallbackLocation) {
+      result.location = fallbackLocation;
+    }
+    if (!result.patientName && context.patientName) {
+      result.patientName = context.patientName;
     }
     return result;
   }

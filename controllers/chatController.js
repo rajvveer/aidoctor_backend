@@ -101,7 +101,10 @@ function getContext(conversation) {
   return {
     lastDisease: conversation.metadata?.lastDisease || '',
     lastIntent: conversation.metadata?.lastIntent || '',
-    lastLocation: conversation.metadata?.lastLocation || ''
+    lastLocation: conversation.metadata?.lastLocation || '',
+    diseaseOfInterest: conversation.userProfile?.diseaseOfInterest || '',
+    location: conversation.userProfile?.location || '',
+    patientName: conversation.userProfile?.patientName || ''
   };
 }
 
