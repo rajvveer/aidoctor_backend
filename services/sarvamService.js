@@ -22,7 +22,7 @@ async function synthesizeSpeech(text, opts = {}) {
     inputs: [trimmedText],
     model: 'bulbul:v3',
     target_language_code: opts.language || 'en-IN',
-    speaker: opts.speaker || 'amelia',
+    speaker: opts.speaker || 'advait',
     pace: opts.pace || 1.0,
     sample_rate: 24000,
   };
