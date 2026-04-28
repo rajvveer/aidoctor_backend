@@ -87,6 +87,15 @@ async function loadOrCreateConversation(conversationId, userInput, user) {
       diseaseOfInterest: userInput.disease || conversation.userProfile?.diseaseOfInterest || defaultProfile.diseaseOfInterest || '',
       location: userInput.location || conversation.userProfile?.location || defaultProfile.location || ''
     };
+  } else if (dbUser?.medicalProfile && (!conversation.userProfile || !conversation.userProfile.diseaseOfInterest)) {
+    // Backfill profile from DB user when conversation exists but has no profile set
+    // (happens when conversation was pre-created via /conversations/new and user sends plain text)
+    const defaultProfile = dbUser.medicalProfile;
+    conversation.userProfile = {
+      patientName: conversation.userProfile?.patientName || defaultProfile.patientName || '',
+      diseaseOfInterest: conversation.userProfile?.diseaseOfInterest || defaultProfile.diseaseOfInterest || '',
+      location: conversation.userProfile?.location || defaultProfile.location || ''
+    };
   }
 
   // Backwards compat: if user logs in on an anonymous session, claim it
