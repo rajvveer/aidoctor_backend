@@ -117,7 +117,8 @@ function getContext(conversation) {
   return {
     lastDisease: conversation.metadata?.lastDisease || profile.diseaseOfInterest || '',
     lastIntent: conversation.metadata?.lastIntent || '',
-    lastLocation: conversation.metadata?.lastLocation || profile.location || ''
+    lastLocation: conversation.metadata?.lastLocation || profile.location || '',
+    patientName: profile.patientName || ''
   };
 }
 
