@@ -59,6 +59,12 @@ async function loadOrCreateConversation(conversationId, userInput, user) {
     dbUser = await User.findById(user._id);
   }
 
+  // Fallback: if JWT expired but conversation belongs to a user, load their profile anyway
+  if (!dbUser && conversation?.userId) {
+    const User = require('../models/User');
+    dbUser = await User.findById(conversation.userId);
+  }
+
   if (!conversation) {
     // If structured input was provided, use it. Otherwise seamlessly inject defaults from global medical profile.
     const defaultProfile = dbUser?.medicalProfile || {};
