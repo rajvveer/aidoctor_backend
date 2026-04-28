@@ -31,7 +31,10 @@ class QueryExpander {
 
     // Detect if this is a contextual query (user didn't explicitly name a disease but we have one in context/profile)
     const fallbackDisease = conversationContext.lastDisease || conversationContext.diseaseOfInterest;
-    const isContextualQuery = fallbackDisease && (!parsed.disease || parsed.disease === parsed.query);
+    
+    const genericTerms = ['my disease', 'this disease', 'my condition', 'this condition', 'the disease', 'the condition', 'it'];
+    const isGenericDisease = parsed.disease && genericTerms.includes(parsed.disease.toLowerCase());
+    const isContextualQuery = fallbackDisease && (!parsed.disease || parsed.disease === parsed.query || isGenericDisease);
 
     let expansion;
     try {
@@ -174,7 +177,11 @@ class QueryExpander {
     const result = { ...parsed };
     // Carry forward disease from previous turn or user profile if none detected
     const fallbackDisease = context.lastDisease || context.diseaseOfInterest;
-    if ((!result.disease || result.disease === result.query) && fallbackDisease) {
+    
+    const genericTerms = ['my disease', 'this disease', 'my condition', 'this condition', 'the disease', 'the condition', 'it'];
+    const isGenericDisease = result.disease && genericTerms.includes(result.disease.toLowerCase());
+    
+    if ((!result.disease || result.disease === result.query || isGenericDisease) && fallbackDisease) {
       result.disease = fallbackDisease;
     }
     const fallbackLocation = context.lastLocation || context.location;
