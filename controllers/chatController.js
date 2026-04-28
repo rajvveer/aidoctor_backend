@@ -79,14 +79,18 @@ async function loadOrCreateConversation(conversationId, userInput, user) {
         location: defaultProfile.location
       }
     });
-  } else if (typeof userInput === 'object' && userInput.disease) {
+  } else {
     // Update userProfile on pre-created conversations (from /conversations/new)
     const defaultProfile = dbUser?.medicalProfile || {};
-    conversation.userProfile = {
-      patientName: userInput.patientName || conversation.userProfile?.patientName || defaultProfile.patientName || '',
-      diseaseOfInterest: userInput.disease || conversation.userProfile?.diseaseOfInterest || defaultProfile.diseaseOfInterest || '',
-      location: userInput.location || conversation.userProfile?.location || defaultProfile.location || ''
-    };
+    const hasExistingProfile = conversation.userProfile && conversation.userProfile.diseaseOfInterest;
+    
+    if (!hasExistingProfile || typeof userInput === 'object') {
+      conversation.userProfile = {
+        patientName: (typeof userInput === 'object' ? userInput.patientName : '') || conversation.userProfile?.patientName || defaultProfile.patientName || '',
+        diseaseOfInterest: (typeof userInput === 'object' ? userInput.disease : '') || conversation.userProfile?.diseaseOfInterest || defaultProfile.diseaseOfInterest || '',
+        location: (typeof userInput === 'object' ? userInput.location : '') || conversation.userProfile?.location || defaultProfile.location || ''
+      };
+    }
   }
 
   // Backwards compat: if user logs in on an anonymous session, claim it
@@ -480,10 +484,24 @@ exports.getConversations = async (req, res) => {
 
 exports.createConversation = async (req, res) => {
   try {
+    let userProfile = {};
+    if (req.user) {
+      const User = require('../models/User');
+      const dbUser = await User.findById(req.user._id);
+      if (dbUser && dbUser.medicalProfile) {
+        userProfile = {
+          patientName: dbUser.medicalProfile.patientName || '',
+          diseaseOfInterest: dbUser.medicalProfile.diseaseOfInterest || '',
+          location: dbUser.medicalProfile.location || ''
+        };
+      }
+    }
+
     const conversation = new Conversation({
       conversationId: uuidv4(),
       title: 'New Conversation',
-      userId: req.user ? req.user._id : undefined
+      userId: req.user ? req.user._id : undefined,
+      userProfile
     });
     await conversation.save();
     res.json({ conversationId: conversation.conversationId });
