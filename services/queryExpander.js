@@ -139,8 +139,7 @@ class QueryExpander {
       /(?:for|about|on|regarding|treat(?:ing|ment)s?\s+(?:for|of))\s+(.+?)(?:\s+(?:treatment|therapy|drug|study|trial|research))?$/i,
       /^(?:latest|recent|new|current)\s+(?:treatment|therapy|research|studies?)\s+(?:for|on|in)\s+(.+)$/i,
       /clinical\s+trials?\s+(?:for|on)\s+(.+)$/i,
-      /top\s+researchers?\s+(?:in|on|for)\s+(.+)$/i,
-      /(.+?)\s+(?:treatment|therapy|clinical trial|research|study|drugs?)/i
+      /top\s+researchers?\s+(?:in|on|for)\s+(.+)$/i
     ];
 
     for (const pattern of patterns) {
