@@ -118,8 +118,11 @@ class QueryExpander {
     }
 
     const text = typeof input === 'string' ? input : input.message || '';
+    // Strip out the appended follow-up context before attempting regex extraction
+    const cleanText = text.split('\n\nAdditional Context:')[0].trim();
+
     return {
-      disease: this._extractDisease(text),
+      disease: this._extractDisease(cleanText),
       query: text,
       location: this._extractLocation(text),
       patientName: ''

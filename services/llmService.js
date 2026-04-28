@@ -400,7 +400,15 @@ Based on the above research data, provide a highly concise, personalized medical
         jsonMode: true
       });
 
-      return JSON.parse(result);
+      const parsed = JSON.parse(result);
+      return {
+        conditionOverview: parsed.conditionOverview || `Based on the latest data, here is an overview of research regarding "${userQuery}".`,
+        researchInsights: parsed.researchInsights || 'Research insights are currently being compiled.',
+        clinicalTrialsSummary: parsed.clinicalTrialsSummary || (clinicalTrials.length > 0 ? `Found ${clinicalTrials.length} relevant clinical trials.` : ''),
+        personalizedRecommendation: parsed.personalizedRecommendation || 'Please consult your healthcare provider for specific guidance.',
+        keyFindings: parsed.keyFindings || publications.slice(0, 3).map(p => `${p.title} (${p.year})`),
+        suggestedQuestions: parsed.suggestedQuestions || []
+      };
     } catch (e) {
       console.error('Medical reasoning failed:', e.message);
       // Structured fallback without LLM
