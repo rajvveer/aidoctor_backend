@@ -624,6 +624,32 @@ exports.handleFileUpload = async (req, res) => {
       userQuery || ''
     );
 
+    // Step 3: RAG Integration
+    if (analysis.primaryCondition) {
+      console.log(`\n🧠 Step 3: Triggering RAG for extracted condition: ${analysis.primaryCondition}...`);
+      const context = getContext(conversation);
+      const ragQuery = userQuery || `Latest treatments and research for ${analysis.primaryCondition}`;
+      
+      const expansion = await queryExpander.expand(ragQuery, {
+        ...context,
+        disease: analysis.primaryCondition,
+        lastDisease: analysis.primaryCondition
+      });
+
+      const retrieval = await retrievalManager.retrieve(expansion);
+      let ranked = rankingPipeline.rank(retrieval.publications, retrieval.clinicalTrials, expansion);
+
+      if (ranked.clinicalTrials.length === 0 && expansion.disease) {
+        const fallbackTrials = await clinicalTrialsService.fetchTrials(expansion.disease, '', expansion.location);
+        const fallbackRanked = rankingPipeline.rank([], fallbackTrials, { ...expansion, intent: '' });
+        ranked.clinicalTrials = fallbackRanked.clinicalTrials;
+      }
+
+      analysis.publications = ranked.publications.map(buildPublicationResponse);
+      analysis.clinicalTrials = ranked.clinicalTrials.map(buildTrialResponse);
+      analysis.researchers = retrieval.researchers || [];
+    }
+
     const totalTimeMs = Date.now() - totalStart;
     console.log(`✅ File analysis complete in ${totalTimeMs}ms`);
 
